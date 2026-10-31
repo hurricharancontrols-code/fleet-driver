@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#F39200">
+<title>Fleet Driver</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+
+<!-- Sign in -->
+<section id="screen-login" class="screen" hidden>
+  <div class="login-top">
+    <img src="icons/icon.svg" alt="Fleet Communications logo" width="120" height="120">
+    <h1>Fleet Driver</h1>
+    <p id="demo-note" class="muted" hidden>Demo mode: any username, PIN 123456. Nothing is sent.</p>
+  </div>
+  <form id="login-form" class="stack" autocomplete="on" novalidate>
+    <label for="login-user">Username</label>
+    <input id="login-user" name="username" autocapitalize="none" autocomplete="username" required>
+    <label for="login-pin">PIN</label>
+    <input id="login-pin" name="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="current-password" required>
+    <p id="login-error" class="error" role="alert" hidden></p>
+    <button id="login-btn" class="btn primary" type="submit">Sign in</button>
+  </form>
+  <p class="muted center">Forgot your PIN? Ask the control room.</p>
+</section>
+
+<!-- Home -->
+<section id="screen-home" class="screen" hidden>
+  <header class="bar">
+    <img src="icons/icon.svg" alt="" width="48" height="48">
+    <div class="grow">
+      <p id="home-name" class="bar-title"></p>
+      <p class="bar-sub">Truck <span id="home-fleet"></span> · <button id="change-truck" class="link" type="button">change</button></p>
+    </div>
+  </header>
+  <main class="content stack">
+    <button class="btn primary big" type="button" data-stage="loading">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7 10l5 5 5-5M4 21h16"/></svg>Loading documents
+    </button>
+    <button class="btn outline big" type="button" data-stage="offloading">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>Offloading documents
+    </button>
+
+    <div id="sync-card" class="card">
+      <p id="sync-text" class="card-title"></p>
+      <p id="sync-sub" class="muted"></p>
+      <button id="sync-now" class="btn small outline" type="button" hidden>Send now</button>
+    </div>
+
+    <div class="card">
+      <p class="label">WORK DATA THIS MONTH</p>
+      <p id="data-used" class="card-title"></p>
+      <p id="data-note" class="muted"></p>
+    </div>
+
+    <div>
+      <p class="label">RECENT LOADS</p>
+      <ul id="recent" class="list"></ul>
+      <p id="recent-empty" class="muted">Nothing sent yet.</p>
+    </div>
+    <button id="logout" class="link center" type="button">Sign out</button>
+  </main>
+</section>
+
+<!-- Capture checklist -->
+<section id="screen-capture" class="screen" hidden>
+  <header class="bar">
+    <button id="capture-back" class="icon-btn" type="button" aria-label="Back">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="grow">
+      <p id="capture-title" class="bar-title"></p>
+      <p class="bar-sub">Truck <span id="capture-fleet"></span></p>
+    </div>
+  </header>
+  <main class="content stack">
+    <label for="pod-no">POD / manual number</label>
+    <input id="pod-no" inputmode="text" autocapitalize="characters" autocomplete="off" required>
+    <p class="muted">All 3 photos are needed before you can send.</p>
+    <div id="slots" class="stack"></div>
+    <div id="odo-wrap" class="stack" hidden>
+      <label for="odo">Odometer reading (km)</label>
+      <input id="odo" type="number" inputmode="numeric" min="1" max="4999999">
+    </div>
+    <p id="capture-error" class="error" role="alert" hidden></p>
+  </main>
+  <footer class="footer">
+    <button id="send-btn" class="btn primary" type="button" disabled>Send</button>
+  </footer>
+  <input id="camera-input" type="file" accept="image/*" capture="environment" hidden>
+</section>
+
+<!-- Photo check -->
+<section id="screen-check" class="screen" hidden>
+  <div id="check-banner" class="banner"><p id="check-title"></p></div>
+  <main class="content stack">
+    <img id="check-img" class="check-img" alt="The photo you just took">
+    <ul id="check-reasons" class="tips"></ul>
+    <p id="check-score" class="muted small-text"></p>
+  </main>
+  <footer class="footer stack">
+    <button id="check-use" class="btn primary" type="button">Use this photo</button>
+    <button id="check-retake" class="btn primary" type="button">Retake photo</button>
+    <button id="check-flag" class="btn outline" type="button" hidden>Send anyway (controller will check)</button>
+  </footer>
+</section>
+
+<!-- Load detail -->
+<section id="screen-detail" class="screen" hidden>
+  <header class="bar">
+    <button id="detail-back" class="icon-btn" type="button" aria-label="Back">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="grow">
+      <p id="detail-title" class="bar-title"></p>
+      <p id="detail-sub" class="bar-sub"></p>
+    </div>
+  </header>
+  <main class="content stack">
+    <div id="detail-photos" class="thumbs"></div>
+    <p id="detail-note" class="muted"></p>
+  </main>
+  <footer class="footer">
+    <button id="detail-share" class="btn outline" type="button">Share to WhatsApp</button>
+  </footer>
+</section>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
