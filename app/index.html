@@ -133,6 +133,27 @@
 
 <div id="toast" class="toast" role="status" hidden></div>
 
+<script>
+/* Safety net: if the app cannot start on this phone, show why instead of a blank page. */
+(function () {
+  function say(msg) {
+    var d = document.getElementById('start-problem');
+    if (!d) {
+      d = document.createElement('pre');
+      d.id = 'start-problem';
+      d.style.cssText = 'white-space:pre-wrap;word-break:break-word;margin:0;padding:16px;font:14px monospace;color:#B42318;background:#fff';
+      document.body.insertBefore(d, document.body.firstChild);
+    }
+    d.textContent += msg + '\n';
+  }
+  window.onerror = function (m, src, line, col) { say('Error: ' + m + ' (' + String(src).split('/').pop() + ':' + line + ')'); };
+  setTimeout(function () {
+    var shown = false, s = document.querySelectorAll('.screen');
+    for (var i = 0; i < s.length; i++) if (!s[i].hidden) shown = true;
+    if (!shown) say('The app did not start.\n' + navigator.userAgent);
+  }, 4000);
+})();
+</script>
 <script src="config.js"></script>
 <script src="app.js"></script>
 </body>
