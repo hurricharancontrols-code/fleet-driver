@@ -260,6 +260,28 @@
   var activeSlot = null; // photo slot waiting for the camera
   var pending = null;    // photo being checked
 
+  /* The camera is another app. On a small phone Android may close the browser tab while the camera is open,
+   * so the load in progress is saved on the phone and restored when the app opens again. */
+  function persistDraft() {
+    if (!draft || !db) return;
+    var d = { id: draft.id, stage: draft.stage, fleetNo: draft.fleetNo, gps: draft.gps, createdAt: draft.createdAt,
+              slots: draft.slots, pod: $('pod-no').value, odo: $('odo').value };
+    store.put('kv', d, 'draft').catch(function () {});
+  }
+  function clearDraft() { if (db) store.del('kv', 'draft').catch(function () {}); }
+
+  function restoreDraft(d) {
+    draft = { id: d.id, stage: d.stage, fleetNo: d.fleetNo, slots: d.slots, gps: d.gps, createdAt: d.createdAt };
+    $('capture-title').textContent = STAGES[d.stage].title;
+    $('capture-fleet').textContent = d.fleetNo;
+    $('pod-no').value = d.pod || '';
+    $('odo').value = d.odo || '';
+    $('capture-error').hidden = true;
+    renderSlots();
+    show('capture');
+    toast('Your unfinished load was restored.');
+  }
+
   function startCapture(stage) {
     getSession().then(function (s) {
       draft = { id: uid(), stage: stage, fleetNo: s.fleetNo, slots: {}, gps: null, createdAt: Date.now() };
@@ -269,6 +291,7 @@
       $('pod-no').value = '';
       $('odo').value = '';
       $('capture-error').hidden = true;
+      clearDraft();
       renderSlots();
       show('capture');
       getGps().then(function (g) { if (draft) draft.gps = g; });
@@ -304,7 +327,7 @@
       var thumb = document.createElement('img');
       thumb.alt = '';
       thumb.className = 'slot-thumb' + (slot.photo ? '' : ' empty');
-      if (slot.photo) { var u = URL.createObjectURL(slot.photo.blob); thumbUrls.push(u); thumb.src = u; }
+      if (slot.photo) { var u = URL.createObjectURL(slot.photo.thumb || slot.photo.blob); thumbUrls.push(u); thumb.src = u; }
       var text = document.createElement('div');
       text.className = 'grow';
       var t = document.createElement('p');
@@ -363,8 +386,12 @@
       var started = draft && Object.keys(draft.slots).some(function (k) { return draft.slots[k].photo; });
       if (started && !window.confirm('Leave without sending? The photos you took will be lost.')) return;
       draft = null;
+      clearDraft();
       goHome();
     });
+    document.addEventListener('visibilitychange', function () { if (document.hidden) persistDraft(); });
+    $('pod-no').addEventListener('change', persistDraft);
+    $('odo').addEventListener('change', persistDraft);
     $('camera-input').addEventListener('change', function (ev) {
       var file = ev.target.files && ev.target.files[0];
       if (!file || !activeSlot) return;
@@ -383,38 +410,87 @@
 
   /* ---------------- Photo check ---------------- */
 
-  function loadImage(file) {
+  /* Phone cameras make very large photos (13-50 megapixels). Decoding one in full can use 200 MB of memory and
+   * crash the tab on a small phone, so the photo is decoded at the reduced size from the start when the browser allows. */
+  function decodeSmall(file) {
+    return longSide(file).then(function (long) {
+      // A photo that is already small enough is opened as it is (no enlarging).
+      if (!window.createImageBitmap || (long && long <= CFG.maxPixels)) return decodeImg(file);
+      return createImageBitmap(file, { resizeWidth: CFG.maxPixels, resizeQuality: 'medium' }).then(function (bm) {
+        return { src: bm, w: bm.width, h: bm.height, done: function () { if (bm.close) bm.close(); } };
+      }).catch(function () { return decodeImg(file); });
+    });
+  }
+
+  /* Reads the JPEG header only (not the whole photo) to find the longest side in pixels. 0 = unknown. */
+  function longSide(file) {
+    return new Promise(function (resolve) {
+      try {
+        var r = new FileReader();
+        r.onload = function () {
+          var v = new DataView(r.result), i = 2, n = v.byteLength;
+          if (n < 4 || v.getUint16(0) !== 0xFFD8) return resolve(0);
+          while (i + 9 < n) {
+            if (v.getUint8(i) !== 0xFF) { i++; continue; }
+            var m = v.getUint8(i + 1);
+            if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {
+              return resolve(Math.max(v.getUint16(i + 5), v.getUint16(i + 7)));
+            }
+            i += 2 + v.getUint16(i + 2);
+          }
+          resolve(0);
+        };
+        r.onerror = function () { resolve(0); };
+        r.readAsArrayBuffer(file.slice(0, 262144));
+      } catch (e) { resolve(0); }
+    });
+  }
+
+  function decodeImg(file) {
     return new Promise(function (resolve, reject) {
       var url = URL.createObjectURL(file);
       var img = new Image();
-      img.onload = function () { resolve({ img: img, url: url }); };
+      img.onload = function () {
+        resolve({ src: img, w: img.naturalWidth, h: img.naturalHeight, done: function () { URL.revokeObjectURL(url); img.src = ''; } });
+      };
       img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('The photo could not be opened. Try again.')); };
       img.src = url;
     });
   }
 
+  function freeCanvas(c) { c.width = 1; c.height = 1; }
+
+  function toBlob(c, quality) {
+    return new Promise(function (resolve) { c.toBlob(resolve, 'image/jpeg', quality); });
+  }
+
   function processPhoto(file, type) {
-    return loadImage(file).then(function (o) {
-      try {
-        var img = o.img, w = img.naturalWidth, h = img.naturalHeight;
-        var scale = Math.min(1, CFG.maxPixels / Math.max(w, h));
-        var c = document.createElement('canvas');
-        c.width = Math.max(1, Math.round(w * scale));
-        c.height = Math.max(1, Math.round(h * scale));
-        var ctx = c.getContext('2d', { willReadFrequently: true });
-        ctx.drawImage(img, 0, 0, c.width, c.height);
-        var m = measure(ctx, c.width, c.height);
-        var verdict = judge(m, type);
-        return new Promise(function (resolve) {
-          c.toBlob(function (blob) {
-            resolve({ blob: blob, width: c.width, height: c.height, sharpness: m.sharpness,
-                      brightness: m.brightness, glare: m.glare, ok: verdict.ok, reasons: verdict.reasons,
-                      takenAt: Date.now() });
-          }, 'image/jpeg', CFG.jpegQuality);
+    return decodeSmall(file).then(function (o) {
+      var c = document.createElement('canvas');
+      var scale = Math.min(1, CFG.maxPixels / Math.max(o.w, o.h));
+      c.width = Math.max(1, Math.round(o.w * scale));
+      c.height = Math.max(1, Math.round(o.h * scale));
+      var ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(o.src, 0, 0, c.width, c.height);
+      o.done();
+      var m = measure(ctx, c.width, c.height);
+      var verdict = judge(m, type);
+      var width = c.width, height = c.height;
+      // Small copy for the thumbnails, so the full photo is not decoded again just to show a small picture.
+      var t = document.createElement('canvas');
+      var ts = 240 / Math.max(width, height);
+      t.width = Math.max(1, Math.round(width * ts));
+      t.height = Math.max(1, Math.round(height * ts));
+      t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+      return toBlob(c, CFG.jpegQuality).then(function (blob) {
+        freeCanvas(c);
+        return toBlob(t, 0.7).then(function (thumb) {
+          freeCanvas(t);
+          return { blob: blob, thumb: thumb, width: width, height: height, sharpness: m.sharpness,
+                   brightness: m.brightness, glare: m.glare, ok: verdict.ok, reasons: verdict.reasons,
+                   takenAt: Date.now() };
         });
-      } finally {
-        URL.revokeObjectURL(o.url);
-      }
+      });
     });
   }
 
@@ -440,6 +516,7 @@
     var sctx = s.getContext('2d', { willReadFrequently: true });
     sctx.drawImage(ctx.canvas, 0, 0, sw, sh);
     var d = sctx.getImageData(0, 0, sw, sh).data;
+    freeCanvas(s);
     var sum = 0, hot = 0, n = sw * sh;
     for (var p = 0; p < d.length; p += 4) {
       var v = 0.299 * d[p] + 0.587 * d[p + 1] + 0.114 * d[p + 2];
@@ -501,6 +578,7 @@
     pending = null;
     show('capture');
     renderSlots();
+    persistDraft();
   }
 
   function initCheck() {
@@ -536,6 +614,7 @@
                  gps: d.gps, createdAt: d.createdAt, status: 'waiting' };
     Promise.all(writes).then(function () { return store.put('loads', load); }).then(function () {
       draft = null;
+      clearDraft();
       toast(navigator.onLine ? 'Saved. Sending now…' : 'Saved. It will send when you have signal.');
       goHome();
       sync();
@@ -681,8 +760,13 @@
       navigator.serviceWorker.register('sw.js').catch(function () {});
     }
     openDb().then(getSession).then(function (s) {
-      if (s && s.expires > Date.now()) { goHome(); sync(); }
-      else show('login');
+      if (s && s.expires > Date.now()) {
+        return store.get('kv', 'draft').then(function (d) {
+          if (d && d.slots && STAGES[d.stage]) restoreDraft(d); else goHome();
+          sync();
+        });
+      }
+      show('login');
     }).catch(function () {
       document.body.textContent = 'This phone\'s browser cannot store data for the app. Update Chrome and try again.';
     });
