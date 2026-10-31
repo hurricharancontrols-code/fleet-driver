@@ -26,4 +26,3 @@ window.FLEET_CONFIG = {
   // Monthly work-data allowance in MB, used for the warning on the home screen. 0 = no warning.
   dataAllowanceMb: 0
 };
-https://script.google.com/macros/s/AKfycbx1g2LgLUhSOmuZ6mUzmDAO1gAwwyBIrQZXq0tZPEKr5hivS4JV5XRJSnpT5hsO0HLm/exec
