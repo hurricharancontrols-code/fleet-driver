@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Fleet Control Room</title>
+<link rel="icon" href="../app/icons/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="control.css">
+</head>
+<body>
+
+<!-- Sign in -->
+<section id="view-login" class="login" hidden>
+  <form id="login-form" class="login-card" novalidate>
+    <img src="../app/icons/icon.svg" alt="" width="84" height="84">
+    <h1>Control room</h1>
+    <p class="muted">Fleet Communications · driver loads and photos</p>
+    <p id="demo-note" class="demo-note" hidden>Demo mode with sample loads: any username, PIN 123456.</p>
+    <label for="login-user">Username</label>
+    <input id="login-user" autocomplete="username" autocapitalize="none" required>
+    <label for="login-pin">PIN</label>
+    <input id="login-pin" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password" required>
+    <p id="login-error" class="error" role="alert" hidden></p>
+    <button id="login-btn" class="btn primary" type="submit">Sign in</button>
+  </form>
+</section>
+
+<!-- Main -->
+<section id="view-main" hidden>
+  <header class="top">
+    <img src="../app/icons/icon.svg" alt="" width="40" height="40">
+    <div class="top-title">
+      <strong>Control room</strong>
+      <span class="muted" id="demo-badge" hidden>· Demo data</span>
+    </div>
+    <div class="period">
+      <select id="period" aria-label="Period">
+        <option value="today">Today</option>
+        <option value="yesterday">Yesterday</option>
+        <option value="7d" selected>Last 7 days</option>
+        <option value="loadperiod">This load period</option>
+        <option value="lastloadperiod">Last load period</option>
+        <option value="custom">Choose dates…</option>
+      </select>
+      <span id="custom-dates" hidden>
+        <input type="date" id="date-from" aria-label="From"> – <input type="date" id="date-to" aria-label="To">
+      </span>
+      <span id="period-label" class="muted"></span>
+    </div>
+    <div class="top-right">
+      <span id="updated" class="muted"></span>
+      <button id="refresh" class="btn ghost" type="button" title="Refresh now">Refresh</button>
+      <span id="who" class="who"></span>
+      <button id="logout" class="btn ghost" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <p id="load-error" class="banner-error" hidden></p>
+
+  <div class="tiles" id="tiles"></div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="loads" role="tab">Loads <span id="count-loads" class="count"></span></button>
+    <button class="tab" data-tab="attention" role="tab">Needs attention <span id="count-attention" class="count warn"></span></button>
+    <button class="tab" data-tab="drivers" role="tab">Drivers <span id="count-drivers" class="count"></span></button>
+  </nav>
+
+  <main class="panel">
+    <!-- Loads -->
+    <div id="tab-loads" class="tab-body">
+      <div class="filters">
+        <input id="search" type="search" placeholder="Search POD, truck or driver">
+        <select id="f-status" aria-label="Status">
+          <option value="">All statuses</option>
+          <option value="complete">Complete</option>
+          <option value="road">On the road</option>
+          <option value="overdue">Overdue offloading</option>
+          <option value="noload">No loading captured</option>
+        </select>
+        <select id="f-review" aria-label="Checked">
+          <option value="">Checked and not checked</option>
+          <option value="todo">Not checked yet</option>
+          <option value="ok">Checked OK</option>
+          <option value="problem">Problem</option>
+        </select>
+        <select id="f-driver" aria-label="Driver"><option value="">All drivers</option></select>
+        <span class="grow"></span>
+        <button id="export" class="btn ghost" type="button">Export CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table class="grid" id="loads-table">
+          <thead><tr>
+            <th data-sort="podNo">POD</th>
+            <th data-sort="fleetNo">Truck</th>
+            <th data-sort="driver">Driver</th>
+            <th data-sort="loadedAt">Loaded</th>
+            <th data-sort="offloadedAt">Offloaded</th>
+            <th data-sort="km" class="num">Km</th>
+            <th data-sort="photos" class="num">Photos</th>
+            <th data-sort="flagged" class="num">Flags</th>
+            <th data-sort="status">Status</th>
+            <th data-sort="review">Checked</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+        <p id="loads-empty" class="empty" hidden>No loads in this period.</p>
+      </div>
+    </div>
+
+    <!-- Needs attention -->
+    <div id="tab-attention" class="tab-body" hidden>
+      <ul id="attention" class="attention"></ul>
+      <p id="attention-empty" class="empty" hidden>Nothing needs attention in this period.</p>
+    </div>
+
+    <!-- Drivers -->
+    <div id="tab-drivers" class="tab-body" hidden>
+      <div class="table-wrap">
+        <table class="grid" id="drivers-table">
+          <thead><tr>
+            <th>Driver</th><th>Truck</th><th>Account</th><th>Last sign-in</th><th>Last upload</th>
+            <th class="num">Loads</th><th class="num">Flagged photos</th><th class="num">Avg sharpness</th>
+            <th class="num">Work data this month</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </main>
+</section>
+
+<!-- Load detail drawer -->
+<aside id="drawer" class="drawer" hidden aria-label="Load detail">
+  <div class="drawer-head">
+    <div>
+      <p class="drawer-kicker">POD</p>
+      <h2 id="d-title"></h2>
+      <p id="d-sub" class="muted"></p>
+    </div>
+    <button id="d-close" class="btn ghost" type="button" aria-label="Close">Close</button>
+  </div>
+  <div id="d-body" class="drawer-body"></div>
+</aside>
+<div id="scrim" class="scrim" hidden></div>
+
+<!-- Full photo -->
+<div id="lightbox" class="lightbox" hidden>
+  <img id="lb-img" alt="">
+  <p id="lb-cap"></p>
+  <button id="lb-close" class="btn primary" type="button">Close</button>
+</div>
+
+<div id="toast" class="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="control.js"></script>
+</body>
+</html>
