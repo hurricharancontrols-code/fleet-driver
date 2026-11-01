@@ -1,6 +1,6 @@
 /* Keeps the app working without signal: the app files are stored on the phone.
  * Change VERSION whenever you upload new app files, so phones fetch the new version. */
-var VERSION = 'fleet-driver-v2';
+var VERSION = 'fleet-driver-v3';
 var FILES = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'manifest.webmanifest',
              'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 

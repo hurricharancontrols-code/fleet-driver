@@ -47,6 +47,12 @@
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21V9M7 14l5-5 5 5M4 3h16"/></svg>Offloading documents
     </button>
 
+    <div id="fix-card" class="card fix" hidden>
+      <p class="card-title">Please fix these loads</p>
+      <p class="muted">The control room could not accept something. Tap Fix now and retake what is asked.</p>
+      <ul id="fix-list" class="list"></ul>
+    </div>
+
     <div id="sync-card" class="card">
       <p id="sync-text" class="card-title"></p>
       <p id="sync-sub" class="muted"></p>
@@ -80,9 +86,13 @@
     </div>
   </header>
   <main class="content stack">
+    <div id="fix-note" class="card fix" hidden>
+      <p class="label">THE CONTROL ROOM SAYS</p>
+      <p id="fix-note-text" class="card-title"></p>
+    </div>
     <label for="pod-no">POD / manual number</label>
     <input id="pod-no" inputmode="text" autocapitalize="characters" autocomplete="off" required>
-    <p class="muted">All 3 photos are needed before you can send.</p>
+    <p id="capture-hint" class="muted">All 3 photos are needed before you can send.</p>
     <div id="slots" class="stack"></div>
     <div id="odo-wrap" class="stack" hidden>
       <label for="odo">Odometer reading (km)</label>

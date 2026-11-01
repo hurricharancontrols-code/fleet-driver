@@ -187,7 +187,11 @@
 
   var lastSyncError = '';
   function renderHome() {
-    return Promise.all([store.all('loads'), store.all('photos'), store.get('kv', monthKey())]).then(function (res) {
+    return Promise.all([store.all('loads'), store.all('photos'), store.get('kv', monthKey()), store.get('kv', 'mine')]).then(function (res) {
+      var mine = res[3] || [];
+      var reviewById = {};
+      mine.forEach(function (m) { reviewById[m.id] = m; });
+      renderFixCard(mine);
       var loads = res[0].sort(function (a, b) { return b.createdAt - a.createdAt; });
       var waitingPhotos = res[1].filter(function (p) { return p.status !== 'sent'; }).length;
       var waitingLoads = loads.filter(function (l) { return l.status !== 'sent'; }).length;
@@ -216,10 +220,16 @@
         var b = document.createElement('button');
         b.type = 'button';
         var left = document.createElement('span');
-        left.textContent = (l.stage === 'loading' ? 'Loading' : 'Offloading') + ' · POD ' + l.podNo + ' · ' + fmtDate(l.createdAt);
+        left.textContent = (l.correctsId ? 'Correction' : (l.stage === 'loading' ? 'Loading' : 'Offloading')) + ' · POD ' + l.podNo + ' · ' + fmtDate(l.createdAt);
         var pill = document.createElement('span');
+        var rv = reviewById[l.id];
         pill.className = 'pill ' + (l.status === 'sent' ? 'sent' : 'wait');
         pill.textContent = l.status === 'sent' ? 'Sent' : 'Waiting';
+        if (rv && l.status === 'sent') {
+          if (rv.review === 'Problem') { pill.className = 'pill fixme'; pill.textContent = 'Fix needed'; }
+          else if (rv.review === 'Resubmitted') { pill.className = 'pill review'; pill.textContent = 'Corrected'; }
+          else if (rv.review === 'OK') { pill.textContent = 'Checked'; }
+        }
         b.appendChild(left);
         b.appendChild(pill);
         b.addEventListener('click', function () { openDetail(l.id); });
@@ -260,23 +270,88 @@
   var activeSlot = null; // photo slot waiting for the camera
   var pending = null;    // photo being checked
 
+  /* ---------------- Corrections ---------------- */
+
+  function renderFixCard(mine) {
+    var todo = mine.filter(function (m) { return m.review === 'Problem'; });
+    $('fix-card').hidden = todo.length === 0;
+    var ul = $('fix-list');
+    ul.textContent = '';
+    todo.forEach(function (m) {
+      var li = document.createElement('li');
+      var b = document.createElement('button');
+      b.type = 'button';
+      var left = document.createElement('span');
+      left.textContent = (m.stage === 'loading' ? 'Loading' : 'Offloading') + ' · POD ' + m.podNo;
+      var note = document.createElement('span');
+      note.className = 'fix-note-small';
+      note.textContent = m.note || 'Please check and resend the photos.';
+      left.appendChild(note);
+      var pill = document.createElement('span');
+      pill.className = 'pill fixme';
+      pill.textContent = 'Fix now';
+      b.appendChild(left);
+      b.appendChild(pill);
+      b.addEventListener('click', function () { startCorrection(m); });
+      li.appendChild(b);
+      ul.appendChild(li);
+    });
+  }
+
+  /* Asks the server which of this driver's loads the control room marked as a problem. */
+  function refreshMine(s) {
+    if (DEMO) return Promise.resolve();
+    return api('mine', { token: s.token }).then(function (r) {
+      if (!r || !r.loads) return;
+      return store.put('kv', r.loads, 'mine');
+    }).catch(function (e) { if (e && e.code === 'AUTH') throw e; });
+  }
+
+  function startCorrection(m) {
+    getSession().then(function (s) {
+      draft = { id: uid(), stage: m.stage, fleetNo: s.fleetNo || m.fleetNo, slots: {}, gps: null, createdAt: Date.now(),
+                correctsId: m.id, podNo: m.podNo, note: m.note, oldOdometer: m.odometer };
+      STAGES[m.stage].photos.forEach(function (p) { draft.slots[p.kind] = { photo: null, attempts: 0 }; });
+      clearDraft();
+      applyCaptureMode();
+      $('pod-no').value = m.podNo;
+      $('odo').value = m.odometer || '';
+      renderSlots();
+      show('capture');
+      getGps().then(function (g) { if (draft) draft.gps = g; });
+    });
+  }
+
+  /* Normal load or correction: the POD number is locked and the note is shown for a correction. */
+  function applyCaptureMode() {
+    var fix = !!(draft && draft.correctsId);
+    $('capture-title').textContent = (fix ? 'Fix: ' : '') + STAGES[draft.stage].title;
+    $('capture-fleet').textContent = draft.fleetNo;
+    $('fix-note').hidden = !fix;
+    $('fix-note-text').textContent = fix ? (draft.note || 'Please check and resend the photos.') : '';
+    $('pod-no').readOnly = fix;
+    $('capture-hint').textContent = fix ? 'Retake only the photos the control room asked for. The others stay as sent.'
+                                        : 'All 3 photos are needed before you can send.';
+    $('capture-error').hidden = true;
+  }
+
   /* The camera is another app. On a small phone Android may close the browser tab while the camera is open,
    * so the load in progress is saved on the phone and restored when the app opens again. */
   function persistDraft() {
     if (!draft || !db) return;
     var d = { id: draft.id, stage: draft.stage, fleetNo: draft.fleetNo, gps: draft.gps, createdAt: draft.createdAt,
-              slots: draft.slots, pod: $('pod-no').value, odo: $('odo').value };
+              slots: draft.slots, pod: $('pod-no').value, odo: $('odo').value,
+              correctsId: draft.correctsId, note: draft.note, oldOdometer: draft.oldOdometer };
     store.put('kv', d, 'draft').catch(function () {});
   }
   function clearDraft() { if (db) store.del('kv', 'draft').catch(function () {}); }
 
   function restoreDraft(d) {
-    draft = { id: d.id, stage: d.stage, fleetNo: d.fleetNo, slots: d.slots, gps: d.gps, createdAt: d.createdAt };
-    $('capture-title').textContent = STAGES[d.stage].title;
-    $('capture-fleet').textContent = d.fleetNo;
+    draft = { id: d.id, stage: d.stage, fleetNo: d.fleetNo, slots: d.slots, gps: d.gps, createdAt: d.createdAt,
+              correctsId: d.correctsId, note: d.note, oldOdometer: d.oldOdometer, podNo: d.pod };
+    applyCaptureMode();
     $('pod-no').value = d.pod || '';
     $('odo').value = d.odo || '';
-    $('capture-error').hidden = true;
     renderSlots();
     show('capture');
     toast('Your unfinished load was restored.');
@@ -286,8 +361,7 @@
     getSession().then(function (s) {
       draft = { id: uid(), stage: stage, fleetNo: s.fleetNo, slots: {}, gps: null, createdAt: Date.now() };
       STAGES[stage].photos.forEach(function (p) { draft.slots[p.kind] = { photo: null, attempts: 0 }; });
-      $('capture-title').textContent = STAGES[stage].title;
-      $('capture-fleet').textContent = s.fleetNo;
+      applyCaptureMode();
       $('pod-no').value = '';
       $('odo').value = '';
       $('capture-error').hidden = true;
@@ -320,7 +394,7 @@
       var slot = draft.slots[def.kind];
       var box = document.createElement('div');
       box.className = 'slot';
-      if (!slot.photo && !nextMarked) { box.className += ' next'; nextMarked = true; }
+      if (!slot.photo && !nextMarked && !draft.correctsId) { box.className += ' next'; nextMarked = true; }
 
       var row = document.createElement('div');
       row.className = 'slot-row';
@@ -334,7 +408,8 @@
       t.className = 'slot-title';
       t.textContent = (i + 1) + '. ' + def.label;
       var st = document.createElement('p');
-      if (!slot.photo) { st.className = 'slot-state'; st.textContent = def.hint; }
+      if (!slot.photo && draft.correctsId) { st.className = 'slot-state'; st.textContent = 'Already sent. Retake only if asked.'; }
+      else if (!slot.photo) { st.className = 'slot-state'; st.textContent = def.hint; }
       else if (slot.photo.flagged) { st.className = 'slot-state flag'; st.textContent = 'Sent for the controller to check'; }
       else { st.className = 'slot-state ok'; st.textContent = 'Clear'; }
       text.appendChild(t);
@@ -344,8 +419,8 @@
 
       var btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'btn ' + (slot.photo ? 'outline small' : 'primary');
-      btn.textContent = slot.photo ? 'Retake' : 'Take photo';
+      btn.className = 'btn ' + (slot.photo || draft.correctsId ? 'outline small' : 'primary');
+      btn.textContent = slot.photo || draft.correctsId ? 'Retake' : 'Take photo';
       btn.addEventListener('click', function () { openCamera(def); });
 
       box.appendChild(row);
@@ -353,12 +428,21 @@
       wrap.appendChild(box);
     });
     var hasOdo = defs.some(function (d) { return d.type === 'odo' && draft.slots[d.kind].photo; });
-    $('odo-wrap').hidden = !hasOdo;
+    $('odo-wrap').hidden = !hasOdo && !draft.correctsId;
     updateSend();
   }
 
   function updateSend() {
     if (!draft) return;
+    if (draft.correctsId) {
+      var changed = STAGES[draft.stage].photos.filter(function (d) { return draft.slots[d.kind].photo; });
+      var odoNeeded = changed.some(function (d) { return d.type === 'odo'; }) && !(Number($('odo').value) > 0);
+      var cbtn = $('send-btn');
+      cbtn.disabled = changed.length === 0 || odoNeeded;
+      cbtn.textContent = changed.length === 0 ? 'Send correction (retake at least one photo)'
+                       : odoNeeded ? 'Send correction (type the odometer reading)' : 'Send correction';
+      return;
+    }
     var allPhotos = STAGES[draft.stage].photos.every(function (d) { return draft.slots[d.kind].photo; });
     var podOk = cleanPod($('pod-no').value).length >= 3;
     var odoOk = Number($('odo').value) > 0;
@@ -600,7 +684,7 @@
     var pod = cleanPod($('pod-no').value);
     var odo = Number($('odo').value) || null;
     var d = draft;
-    var defs = STAGES[d.stage].photos;
+    var defs = STAGES[d.stage].photos.filter(function (def) { return !d.correctsId || d.slots[def.kind].photo; });
     var photoIds = [];
     var writes = defs.map(function (def) {
       var p = d.slots[def.kind].photo;
@@ -609,10 +693,16 @@
       photoIds.push(rec.id);
       return store.put('photos', rec);
     });
-    var load = { id: d.id, stage: d.stage, podNo: pod, fleetNo: d.fleetNo, odometer: odo, photoIds: photoIds,
+    var load = { id: d.id, correctsId: d.correctsId || null, stage: d.stage, podNo: pod, fleetNo: d.fleetNo, odometer: odo, photoIds: photoIds,
                  flagged: defs.filter(function (def) { return d.slots[def.kind].photo.flagged; }).length,
                  gps: d.gps, createdAt: d.createdAt, status: 'waiting' };
     Promise.all(writes).then(function () { return store.put('loads', load); }).then(function () {
+      // A correction takes the load off the "please fix" list straight away.
+      return d.correctsId ? store.get('kv', 'mine').then(function (list) {
+        (list || []).forEach(function (m) { if (m.id === d.correctsId) m.review = 'Resubmitted'; });
+        return store.put('kv', list || [], 'mine');
+      }) : null;
+    }).then(function () {
       draft = null;
       clearDraft();
       toast(navigator.onLine ? 'Saved. Sending now…' : 'Saved. It will send when you have signal.');
@@ -645,7 +735,7 @@
           .sort(function (a, b) { return a.createdAt - b.createdAt; });
         var chain = Promise.resolve();
         todo.forEach(function (load) { chain = chain.then(function () { return sendLoad(s, load); }); });
-        return chain;
+        return chain.then(function () { return refreshMine(s); });
       });
     }).catch(function (e) {
       lastSyncError = e.message || 'unknown error';
@@ -664,9 +754,9 @@
         return store.get('photos', pid).then(function (p) {
           if (!p || p.status === 'sent') return;
           return blobToBase64(p.blob).then(function (b64) {
-            return api('upload', { token: s.token, photoId: p.id, submissionId: load.id, podNo: load.podNo,
+            return api('upload', { token: s.token, photoId: p.id, submissionId: load.correctsId || load.id, podNo: load.podNo,
                                    stage: load.stage, kind: p.kind, fleetNo: load.fleetNo, takenAt: p.takenAt,
-                                   sharpness: p.sharpness, override: p.flagged, data: b64 });
+                                   sharpness: p.sharpness, override: p.flagged, replace: !!load.correctsId, data: b64 });
           }).then(function () {
             p.status = 'sent';
             p.sentAt = Date.now();
@@ -678,6 +768,7 @@
     return chain.then(function () {
       return store.get('kv', monthKey());
     }).then(function (bytes) {
+      if (load.correctsId) return api('correct', { token: s.token, submissionId: load.correctsId, odometer: load.odometer });
       return api('submit', { token: s.token, submission: {
         id: load.id, podNo: load.podNo, stage: load.stage, fleetNo: load.fleetNo, odometer: load.odometer,
         photoCount: load.photoIds.length, flagged: load.flagged, createdAt: load.createdAt,

@@ -98,3 +98,10 @@ input:focus { outline: none; border-color: var(--ink); }
 .thumbs img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 10px; background: var(--line); }
 
 .toast { position: fixed; left: 16px; right: 16px; bottom: 96px; max-width: 520px; margin: 0 auto; background: var(--ink); color: var(--white); padding: 14px 16px; border-radius: 12px; font-weight: 700; z-index: 10; }
+
+.card.fix { border-left: 6px solid var(--bad); background: #FFF4F2; }
+.fix .list button { background: var(--white); border: 2px solid var(--bad); }
+.fix-note-small { font-size: 14px; font-weight: 600; color: var(--bad); display: block; margin-top: 2px; }
+.pill.fixme { background: #FDE3E0; color: var(--bad); }
+.pill.review { background: #E1EAF7; color: #234E8C; }
+input[readonly] { background: var(--line); color: var(--muted); }
