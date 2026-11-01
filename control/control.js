@@ -23,7 +23,8 @@
   var REVIEW = {
     ok: { label: 'Checked OK', cls: 'ok' },
     problem: { label: 'Problem', cls: 'bad' },
-    todo: { label: 'Not checked', cls: 'grey' }
+    todo: { label: 'Not checked', cls: 'grey' },
+    resub: { label: 'Corrected, check again', cls: 'info' }
   };
 
   var session = null;
@@ -197,7 +198,8 @@
     });
     var subById = {};
     data.submissions.forEach(function (s) { subById[s.id] = s; });
-    data.uploads.forEach(function (u) {
+    // A photo the driver has replaced no longer counts; only the newest one of each kind is shown.
+    data.uploads.filter(function (u) { return !u.superseded; }).forEach(function (u) {
       u.received = ms(u.receivedAt);
       var s = subById[u.submissionId];
       if (s) s.uploads.push(u);
@@ -228,6 +230,7 @@
       else if (p.loading) p.status = (now - p.loading.captured > CFG.overdueHours * 3600000) ? 'overdue' : 'road';
       else p.status = 'noload';
       if (p.subs.some(function (s) { return s.review === 'Problem'; })) p.review = 'problem';
+      else if (p.subs.some(function (s) { return s.review === 'Resubmitted'; })) p.review = 'resub';
       else if (p.subs.every(function (s) { return s.review === 'OK'; })) p.review = 'ok';
       else p.review = 'todo';
       p.odoIssue = p.km != null && (p.km < 0 || p.km > 2000);
@@ -258,7 +261,8 @@
     var ups = data.uploads.filter(function (u) { return u.received >= range.from && u.received <= range.to; });
     var cnt = function (k) { return pods.filter(function (p) { return p.status === k; }).length; };
     var flagged = ups.filter(function (u) { return u.flagged; }).length;
-    var todo = pods.filter(function (p) { return p.review === 'todo'; }).length;
+    var todo = pods.filter(function (p) { return p.review === 'todo' || p.review === 'resub'; }).length;
+    var resub = pods.filter(function (p) { return p.review === 'resub'; }).length;
     var problems = pods.filter(function (p) { return p.review === 'problem'; }).length;
     var delays = subs.map(function (s) { return s.received - s.captured; }).filter(function (d) { return d >= 0; }).sort(function (a, b) { return a - b; });
     var median = delays.length ? delays[Math.floor(delays.length / 2)] : null;
@@ -273,7 +277,7 @@
       { v: cnt('road'), l: 'On the road', s: 'loaded, offloading not yet in', c: 't-info', go: { status: 'road' } },
       { v: cnt('overdue'), l: 'Overdue offloading', s: 'no offloading after ' + CFG.overdueHours + ' h', c: cnt('overdue') ? 't-bad' : 't-ok', go: { status: 'overdue' } },
       { v: flagged, l: 'Photos flagged', s: 'of ' + ups.length + ' photos (' + (ups.length ? Math.round(100 * flagged / ups.length) : 0) + '%)', c: flagged ? 't-bad' : 't-ok', go: { tab: 'attention' } },
-      { v: todo, l: 'Not checked yet', s: problems + ' marked as problem', c: todo ? 't-warn' : 't-ok', go: { review: 'todo' } },
+      { v: todo, l: 'Not checked yet', s: problems + ' with the driver to fix · ' + resub + ' corrected', c: (todo || resub) ? 't-warn' : 't-ok', go: { review: 'todo' } },
       { v: median == null ? '–' : dur(median), l: 'Typical send time', s: 'photo taken to control room', c: 't-info' },
       { v: Object.keys(drivers).length + ' / ' + activeDrivers, l: 'Drivers using the app', s: 'active accounts', c: 't-info', go: { tab: 'drivers' } }
     ];
@@ -320,7 +324,7 @@
     var st = $('f-status').value, rv = $('f-review').value, dr = $('f-driver').value;
     return pods.filter(function (p) {
       if (st && p.status !== st) return false;
-      if (rv && p.review !== rv) return false;
+      if (rv === 'todo' ? (p.review !== 'todo' && p.review !== 'resub') : (rv && p.review !== rv)) return false;
       if (dr && p.username !== dr) return false;
       if (q && (p.podNo + ' ' + p.fleetNo + ' ' + p.driver).toUpperCase().indexOf(q) < 0) return false;
       return true;
@@ -391,7 +395,8 @@
   function attentionItems() {
     var items = [];
     pods.forEach(function (p) {
-      if (p.review === 'problem') items.push({ sev: 0, pod: p, what: 'Marked as a problem', why: p.subs.map(function (s) { return s.reviewNote; }).filter(Boolean).join(' · '), t: p.last, cls: 'bad' });
+      if (p.review === 'problem') items.push({ sev: 0, pod: p, what: 'With the driver to fix', why: p.subs.map(function (s) { return s.reviewNote; }).filter(Boolean).join(' · '), t: p.last, cls: 'bad' });
+      if (p.review === 'resub') items.push({ sev: 0, pod: p, what: 'Driver sent a correction: check again', why: 'Corrected ' + fmt(ms(p.subs.filter(function (s) { return s.review === 'Resubmitted'; })[0].correctedAt)) + '.', t: ms(p.subs.filter(function (s) { return s.review === 'Resubmitted'; })[0].correctedAt), cls: 'info' });
       if (p.photos < p.expected) items.push({ sev: 0, pod: p, what: (p.expected - p.photos) + ' photo(s) missing', why: 'The phone reported more photos than arrived.', t: p.last, cls: 'bad' });
       p.uploads.filter(function (u) { return u.flagged; }).forEach(function (u) {
         items.push({ sev: 1, pod: p, what: KIND_LABELS[u.kind] + ' sent after failing the photo check', why: 'Sharpness ' + (u.sharpness == null ? '?' : u.sharpness) + '. Check the numbers can be read.', t: u.received, cls: 'bad' });
@@ -593,7 +598,9 @@
   function reviewBox(p, s) {
     var wrap = el('div', 'review');
     var state = el('p', 'muted');
-    if (s.review) state.textContent = (s.review === 'OK' ? 'Checked OK' : 'Problem') + ' · ' + (s.reviewedBy || '') + ' · ' + fmt(ms(s.reviewedAt));
+    if (s.review === 'Resubmitted') state.textContent = 'The driver sent a correction on ' + fmt(ms(s.correctedAt)) + '. Check the photos and odometer again. Earlier note: ' + (s.reviewNote || 'none') + ' (' + (s.reviewedBy || '') + ')';
+    else if (s.review === 'Problem') state.textContent = 'With the driver to fix · ' + (s.reviewedBy || '') + ' · ' + fmt(ms(s.reviewedAt)) + '. The driver sees your note in the app when it is open.';
+    else if (s.review) state.textContent = 'Checked OK · ' + (s.reviewedBy || '') + ' · ' + fmt(ms(s.reviewedAt));
     else state.textContent = 'Not checked yet.';
     wrap.appendChild(state);
     var note = el('textarea');
@@ -604,7 +611,16 @@
     var okBtn = el('button', 'btn ok', 'Looks good');
     var badBtn = el('button', 'btn bad', 'Problem');
     var clrBtn = el('button', 'btn ghost', 'Clear');
-    [okBtn, badBtn, clrBtn].forEach(function (b) { b.type = 'button'; row.appendChild(b); });
+    var copyBtn = el('button', 'btn ghost', 'Copy message for the driver');
+    [okBtn, badBtn, clrBtn, copyBtn].forEach(function (b) { b.type = 'button'; row.appendChild(b); });
+    copyBtn.hidden = s.review !== 'Problem';
+    copyBtn.addEventListener('click', function () {
+      var text = (s.driverName || s.username) + ' (' + s.fleetNo + '), POD ' + s.podNo + ' (' + (s.stage === 'loading' ? 'loading' : 'offloading') + '): ' +
+                 (note.value.trim() || s.reviewNote || 'please check the photos') + '. Please open the Fleet Driver app and tap "Fix now".';
+      var done = function () { toast('Message copied. Paste it into the driver\'s WhatsApp.'); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () { window.prompt('Copy this message:', text); });
+      else window.prompt('Copy this message:', text);
+    });
     if (!s.review) clrBtn.hidden = true;
     wrap.appendChild(row);
     function save(status) {
@@ -615,7 +631,7 @@
         s.reviewNote = status ? note.value.trim() : '';
         s.reviewedBy = r.reviewedBy;
         s.reviewedAt = r.reviewedAt;
-        toast(status ? 'Saved.' : 'Cleared.');
+        toast(status === 'Problem' ? 'Saved. The driver will see it in the app.' : status ? 'Saved.' : 'Cleared.');
         build();
         renderAll();
         var np = pods.filter(function (x) { return x.podNo === p.podNo; })[0];
