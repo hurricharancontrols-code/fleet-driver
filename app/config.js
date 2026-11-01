@@ -4,7 +4,7 @@
  *         Leave it empty ('') to run in DEMO mode: nothing is sent, any username works with PIN 123456.
  */
 window.FLEET_CONFIG = {
-  apiUrl: '',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbywdUb9vlbM76XEwopfUQHay8XAkPwVqsVwU6jnc5xF08kZKgxg51wpEfapeFuftaeB/exec',
 
   // Photo size kept for sending (longest side, pixels) and JPEG quality.
   maxPixels: 2048,
@@ -26,4 +26,4 @@ window.FLEET_CONFIG = {
   // Monthly work-data allowance in MB, used for the warning on the home screen. 0 = no warning.
   dataAllowanceMb: 0
 };
-https://script.google.com/macros/s/AKfycbywdUb9vlbM76XEwopfUQHay8XAkPwVqsVwU6jnc5xF08kZKgxg51wpEfapeFuftaeB/exec
+
