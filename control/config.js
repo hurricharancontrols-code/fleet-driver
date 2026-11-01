@@ -4,7 +4,7 @@
  *         Leave it empty ('') to run in DEMO mode with made-up sample loads: any username, PIN 123456.
  */
 window.CONTROL_CONFIG = {
-  apiUrl: '',
+  apiUrl: 'https://script.google.com/macros/s/AKfycbywdUb9vlbM76XEwopfUQHay8XAkPwVqsVwU6jnc5xF08kZKgxg51wpEfapeFuftaeB/exec',
 
   // How often the page fetches new loads, in seconds.
   refreshSeconds: 60,
